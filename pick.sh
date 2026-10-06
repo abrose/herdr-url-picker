@@ -18,7 +18,34 @@ if [ -z "$pane_id" ]; then
   exit 1
 fi
 
-exec "$herdr" plugin pane open \
+# Snapshot Neovim before opening the popup: modal focus can close transient
+# preview windows, removing the URL-bearing buffer from Neovim's live state.
+snapshot="$(mktemp "${HERDR_PLUGIN_STATE_DIR:-${TMPDIR:-/tmp}}/nvim-snapshot.XXXXXX")"
+process_info="$("$herdr" pane process-info --pane "$pane_id" 2>/dev/null)" || process_info=""
+nvim_socket="$(printf '%s' "$process_info" |
+  jq -r '.result.process_info.foreground_processes[]?.argv | select(index("--listen")) | .[index("--listen") + 1]' |
+  head -n 1)"
+if [ -z "$nvim_socket" ]; then
+  nvim_pid="$(printf '%s' "$process_info" |
+    jq -r '.result.process_info.foreground_processes[]? | select(.name == "nvim") | .pid' | head -n 1)"
+  if [ -r "/proc/$nvim_pid/environ" ]; then
+    nvim_socket="$(tr '\0' '\n' <"/proc/$nvim_pid/environ" | sed -n 's/^NVIM_LISTEN_ADDRESS=//p' | head -n 1)"
+  elif [ -n "$nvim_pid" ]; then
+    nvim_socket="$(ps eww -p "$nvim_pid" -o command= | tr ' ' '\n' | sed -n 's/^NVIM_LISTEN_ADDRESS=//p' | head -n 1)"
+  fi
+fi
+chmod 600 "$snapshot"
+if [ -n "$nvim_socket" ]; then
+  nvim --server "$nvim_socket" --remote-expr \
+    'join(map(tabpagebuflist(), "join(getbufline(v:val, 1, \"$\"), \"\\n\")"), "\n")' \
+    >"$snapshot" 2>/dev/null || true
+fi
+
+if ! "$herdr" plugin pane open \
   --plugin url-picker \
   --entrypoint picker \
-  --env "URL_PICKER_SOURCE_PANE=$pane_id"
+  --env "URL_PICKER_SOURCE_PANE=$pane_id" \
+  --env "URL_PICKER_NVIM_SNAPSHOT=$snapshot"; then
+  rm -f "$snapshot"
+  exit 1
+fi

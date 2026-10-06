@@ -9,6 +9,8 @@ set -uo pipefail
 herdr="${HERDR_BIN_PATH:-herdr}"
 here="$(cd "$(dirname "$0")" && pwd)"
 pane_id="${URL_PICKER_SOURCE_PANE:-}"
+snapshot="${URL_PICKER_NVIM_SNAPSHOT:-}"
+trap '[ -z "$snapshot" ] || rm -f "$snapshot"' EXIT
 
 # Load user config, if present (see .env.example). `set -a` exports every
 # setting so the child extract-urls.sh inherits the URL_PICKER_* vars too.
@@ -42,6 +44,12 @@ text="$("$herdr" pane read "$pane_id" --source recent-unwrapped --lines "$lines"
   notify "url-picker: failed to read pane $pane_id"
   exit 1
 }
+
+# Neovim text is captured by the action before this modal opens because
+# opening it can close transient preview windows.
+if [ -f "$snapshot" ]; then
+  text="$(printf '%s\n%s\n' "$text" "$(cat "$snapshot")")"
+fi
 
 urls="$(printf '%s\n' "$text" | "$here/extract-urls.sh")"
 

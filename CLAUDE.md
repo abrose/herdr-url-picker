@@ -20,6 +20,11 @@ chosen one in the default browser.
   The popup builds its *own* invocation context at open time, so it can't be
   trusted to still know which pane the user came from. `pick.sh` reads
   `focused_pane_id` from `HERDR_PLUGIN_CONTEXT_JSON` and hands it over.
+- **Neovim buffers are snapshotted before opening the popup.** A modal can
+  close transient preview windows, so querying Neovim from `picker.sh` is too
+  late. `pick.sh` detects `--listen` or `NVIM_LISTEN_ADDRESS`, writes the
+  current tab's buffers to a private temporary file, and passes its path to the
+  popup. `picker.sh` consumes and removes it.
 - **`herdr pane read --source recent-unwrapped --format text`** is the input.
   `--format text` returns *raw plain text* (no JSON envelope, no ANSI), so it
   pipes straight into the extractor. `recent-unwrapped` rejoins soft-wrapped
@@ -61,6 +66,8 @@ chosen one in the default browser.
 
 - `test/extract-urls.test.sh` — unit tests, all passing. Also verified the
   read→extract path against live panes (`herdr pane read | extract-urls.sh`).
+- `test/neovim-snapshot.test.sh` — regression test for pre-popup Neovim
+  capture, snapshot handoff, selection, opening, and cleanup.
 - **Interactive path (popup + fzf + browser open) is NOT auto-tested** — it
   needs a human to drive fzf. Test by binding the key and pressing it, or:
   `herdr plugin action invoke url-picker.pick`.
